@@ -1,0 +1,210 @@
+#!/bin/bash
+
+#P6. Crear una aplicación que reciba como parámetros un dispositivos de bloques un formato de ficheros y un punto de montaje y lo #configure para que esté disponible tras reiniciar.
+
+#Funciones
+function comprobarusuario()
+{
+    usuario=$(whoami)
+    if [[ $usuario != 'root' ]];
+    then
+	echo "El usuario que ejecuta este script debe ser root."
+	exit 1
+    fi
+}
+
+function comprobarparametros()
+{
+    if [[ -z $1 ]];
+    then
+      	echo "No se ha incluido ningún parametro "
+        echo "se le llevará al manual..."
+	sleep 2
+	mostrarayuda
+    else
+	echo "un parámetro como mínimo..........ok"
+	
+    fi
+}
+
+function comprobarparametros2()
+{
+    if [[ $1 =  "3"  ]];
+    then
+	echo "número de parámetros..............ok"
+    else
+	echo "número de parámetros invalido , revise la sintaxis con automontar /? o automontar --help"
+	echo "se le llevará al manual..."
+	sleep 2
+	mostrarayuda
+    fi
+}
+
+function mostrarayuda()
+{
+    clear
+    echo "Manual"
+    echo "Sintaxis del comando:"
+    echo "./automontar <Ruta de la unidad a montar> <sistema de ficheros a utilizar > <Dirección en la que se ralizará el comando > "
+    read -p "Pulse [ENTER] para salir"
+    exit
+}
+
+function comprobarunidad()
+{
+    comprobacion=$(ls $1)
+
+    if [[ -z $comprobacion ]]; then
+	comprobacion="False"
+    fi
+    if [[ $comprobacion == $1 ]];
+    then
+	echo "¡Se ha encontrado el dispositivo de bloques indicado!"
+    else
+	echo "¡ERROR!"
+	echo "No se ha encontrado el dispositivo de bloques indicados o la sintaxis usada no es válida ."
+	echo "Revise el manual con ./automontar /? o ./automontar --help."
+	exit
+    fi
+}
+
+function comprobarfs()
+{
+    if [[ -e "/sbin/fsck.${1}" ]];
+    then
+	echo "¡Se ha encontrado el sistema de ficheros "$1" instalado en el equipo!"
+    else
+	echo "¡ERROR!"
+	echo "No se ha encontrado el sistema de ficheros "$1" o la sintaxis usada no es válida ."
+	echo "Revise el manual con ./automontar /? o ./automontar --help."
+	exit
+
+    fi
+}
+
+function comprobarpmontaje()
+{
+    if [[ -d $1 ]];
+    then
+	echo "¡Existe el punto de montaje "$1"!"
+    else
+	echo "¡ERROR!"
+	echo "No existe el punto de montaje" $1 " o la sintaxis usada no es válida ."
+	echo "Revise el manual con ./automontar /? o ./automontar --help."
+	exit
+
+    fi
+    sleep 2
+
+    clear
+    comp3=$( lsblk |grep $1 )
+
+    if [[ -z $comp3 ]];
+    then
+	echo "¡El dispositivo de bloques "$1" está libre!"
+    else
+	echo "El dispositivo de bloques "$1" está siendo usado."
+        echo $comp3
+	echo "Revise el manual con ./automontar /? o ./automontar --help."
+	exit
+    fi
+}
+
+#Comienzo del programa
+
+#Comprobación de usuario
+comprobarusuario
+#comprobamos que el número de parámetros sea correcto
+clear
+echo "Comprobación de parámetros"
+comprobarparametros $1
+sleep 2
+
+#En este punto, tras asegurarme de que al menos hay un parámetro , compruebo su se quiere acceder al manual.
+if [[ "$1" == "/?" || "$1" == "--help" ]];
+then
+    echo "Ayuda"
+    mostrarayuda
+fi
+
+
+comprobarparametros2 $#
+#comprobamos que el número de parámetros sea correcto
+sleep 2
+
+#Empezamos comprobando si existe la unidad seleccionada.
+clear
+echo "Comprobando si existe el dispositivo de bloques" $1
+comprobarunidad $1
+sleep 2
+
+#Comprobamos  si tiene instalado  el sistema de ficheros correspondiente.
+clear
+echo "Comprobación del sistema de ficheros"
+comprobarfs $2
+sleep 2
+
+clear
+#Comprobar el punto de montaje
+echo "Comprobación del punto de montaje"
+comprobarpmontaje $3
+sleep 2
+
+#Confirmación por parte del usuario
+clear
+echo "Se montará el sistema de bloques "$1" en la ruta "$3" con el sistema de ficheros "$2"."
+echo "Si quiere montar la unidad manualmente, el comando quedaría así:"
+echo "mount -t "$2 $1 $3
+sleep 2
+
+#Inicio un blucle while del cual se saldrá solo si el usuario respode sí o no, afirmando o negando
+# que quiere que se automonte la unidad con los parámetros que ha dado.
+
+salida="False"
+while [[ $salida = "False" ]]
+do
+    read -p "¿Desea que se incluyan esos datos para el automontaje de la unidad en el archivo fstab ?(S/N)" respuesta
+
+    case "${respuesta:='n'}" in
+	"S")
+            echo "Se incluirá la línea en fstab."
+	    echo "La nueva línea quedaría así:"
+	    #Crea una variable con los datos en el formato adecuado para fstab
+	    nlinea=$1"	"$3"	"$2"	 auto,rw	0	0"
+	    echo $nlinea
+	    echo $nlinea >> /etc/fstab
+	    salida="True"
+            ;;
+	"N")
+            echo "No se guardarán los datos."
+            salida="True"
+            ;;
+	*)
+            echo "Respuesta no válida"
+            ;;
+    esac
+done
+
+salida="False"
+while [[ $salida = "False" ]]
+do
+    read -p "¿Quieres montar $1 en $3 Ahora? (S/N)" respuesta2
+
+    case "${respuesta2:='n'}" in
+	"S")
+	    mount -t $2 $1 $3
+	    echo "Se ha montado la unidad."
+	    salida="True"
+	    ;;
+	"N")
+	    echo "No se montará la unidad hasta el siguiente arranque."
+	    salida="True"
+	    ;;
+	*)
+	    echo "Respuesta no válida."
+	    ;;
+    esac
+done
+
+echo "El programa ha finalizado."
+#Fin del programa
